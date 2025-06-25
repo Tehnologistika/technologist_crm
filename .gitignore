@@ -3,3 +3,4 @@ node_modules/
 *.log
 glossy-window-453706-a7-095c020b3a39.json
 /keys/
+__pycache__/

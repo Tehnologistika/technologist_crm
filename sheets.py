@@ -1,8 +1,9 @@
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
+import os
 
-CREDENTIALS_FILE = '/home/gpt/technologist_crm/glossy-window-453706-a7-095c020b3a39.json'
+CREDENTIALS_FILE = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "/home/a777/keys/prod-sa.json")
 SPREADSHEET_ID   = '1y4Gtr_Urqdf7OFWLXfPIowT03kMIX6poTerwXiypabs'      # <-- вставь свой ID
 SHEET_NAME       = 'Заявки'
 
