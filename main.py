@@ -517,7 +517,7 @@ def extract_route(text: str) -> tuple[str, str] | None:
     to_city   = m.group(2).strip().title()
     return from_city, to_city
 
-from sheets import add_record, sheet   # Google‑Sheets helpers
+from sheets import add_request_row as add_record, sheet
 from database import database, agents, orders
 from database import companies as company
 
