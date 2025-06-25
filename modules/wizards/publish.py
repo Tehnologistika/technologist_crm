@@ -1,5 +1,6 @@
 from modules.helpers import _clean_optional, BACK_PATTERN, _norm_inn, format_company_requisites
 from modules.company_service import _get_company, _save_company
+from sheets import add_request_row
 
 # Telegram imports
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
@@ -844,7 +845,23 @@ async def pub_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # extract numeric order id from message "Ваш номер заявки: N"
         import re as _re
         m_id = _re.search(r"\d+", res.get("message", ""))
-        order_id = m_id.group(0) if m_id else ""
+        order_id = int(m_id.group(0)) if m_id else 0
+        try:
+            prof = requests.get(f"{SERVER_URL}/agent/{q.from_user.id}", timeout=4).json()
+        except Exception:
+            prof = {}
+        try:
+            add_request_row({
+                "id": order_id,
+                "date": date_str,
+                "navigator": prof.get("name", ""),
+                "customer_company": o.get("cust_company_name", ""),
+                "route": route,
+                "cargo": cars_descr,
+                "orig_price": _clean_money(budget_text),
+            })
+        except Exception as e:
+            print("Sheets add_request_row error:", e)
         kb_cancel = InlineKeyboardMarkup(
             [[InlineKeyboardButton("❌ Отменить", callback_data=f"nv_cancel_{order_id}")]]
         )

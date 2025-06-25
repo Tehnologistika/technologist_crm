@@ -1,5 +1,6 @@
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 from telegram.ext import ContextTypes, ConversationHandler, CallbackQueryHandler, MessageHandler, filters
+from sheets import update_request
 from pprint import pprint
 import requests
 import os
@@ -758,6 +759,18 @@ async def _finish_close(update: Update, ctx):
             chat_id=update.effective_chat.id,
             text="✅ Данные отправлены, спасибо!"
         )
+        try:
+            update_request(
+                order_id,
+                {
+                    "driver": ctx.user_data.get("driver_fio", ""),
+                    "carrier_company": ctx.user_data.get("carrier_company", ""),
+                    "carrier_price": detail.get("final_amt", ""),
+                    "status": "Подтверждена",
+                },
+            )
+        except Exception as e:
+            print("Sheets update_request error:", e)
         # попытка отправить сформированные договоры
         try:
             import io, os, requests
