@@ -4,7 +4,7 @@ from datetime import datetime
 import os
 
 CREDENTIALS_FILE = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "/home/a777/keys/prod-sa.json")
-SPREADSHEET_ID   = '1y4Gtr_Urqdf7OFWLXfPIowT03kMIX6poTerwXiypabs'      # <-- вставь свой ID
+SPREADSHEET_ID = '1oZaOlgU9gX4IwAPaa_Cl2eXVKbLeSvSPtt0oAG4nKO0'      # <-- вставь свой ID
 SHEET_NAME       = 'Заявки'
 
 SCOPES = [
