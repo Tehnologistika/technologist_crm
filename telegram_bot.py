@@ -50,6 +50,7 @@ import io
 from modules.helpers import _http_get_json
 from modules.helpers import _clean_optional, _norm_inn, fmt_money, BACK_PATTERN
 from modules.wizards.publish import _clean_money
+from sheets import update_request
 from modules.wizards.publish import (
     # states
     PUB_CAR_COUNT, PUB_CAR_MODELS, PUB_VINS, PUB_L_ADDR, PUB_L_DATE, PUB_L_CONTACT, PUB_L_MORE,
@@ -2126,6 +2127,20 @@ async def admin_set_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ok = resp.status_code == 200
     except Exception as e:
         print("admin_set_status request error:", e)
+
+    if ok:
+        status_ru = {
+            "active": "Активна",
+            "confirmed": "Подтверждена",
+            "in_progress": "В работе",
+            "done": "Исполнена",
+            "paid": "Оплачена",
+            "cancelled": "Отменена",
+        }.get(status, status)
+        try:
+            update_request(order_id, {"status": status_ru})
+        except Exception as e:
+            print("Sheets update_request error:", e)
 
     await q.answer("✅ Обновлено." if ok else "❌ Не удалось изменить статус.")
 
