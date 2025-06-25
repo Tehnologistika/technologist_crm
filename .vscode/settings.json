@@ -1,0 +1,24 @@
+{
+    "sqltools.connections": [
+        {
+            "previewLimit": 50,
+            "server": "127.0.0.1",
+            "port": 5432,
+            "askForPassword": true,
+            "driver": "PostgreSQL",
+            "name": "local_pg ",
+            "username": "gpt",
+            "database": "technolog_db"
+        },
+        {
+            "previewLimit": 50,
+            "server": "127.0.0.1",
+            "port": 5432,
+            "driver": "PostgreSQL",
+            "name": "local_pg2",
+            "database": "technolog_db",
+            "username": "gpt",
+            "password": "Techno2025_test"
+        }
+    ]
+}

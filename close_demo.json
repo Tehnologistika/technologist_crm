@@ -1,0 +1,25 @@
+{
+  "order_id": 28,
+  "executor_id": 222,
+  "driver_fio": "Петров Пётр",
+  "driver_passport": "4500 123456",
+  "driver_license": "77 AA 654321",
+  "truck_reg": "А123ВС 61",
+  "truck_model": "Volvo FM",
+  "trailer_reg": "О456КН 61",
+  "trailer_model": "Lohr Eurolohr",
+  "carrier_requisites": "ИП Петров, ИНН 555555555555, р/с 40802810900000000002, Банк ВТБ, БИК 044525411",
+  "insurance_policy": "CMR-123456 от 01.05.2025",
+  "loads": [{
+    "place": "Ростов-на-Дону, ул. Малиновского 10",
+    "date": "2025-05-10",
+    "contact": "Иван Иванов +7-900-111-22-33",
+    "vins": ["WDC123456789", "WBA987654321"]
+  }],
+  "unloads": [{
+    "place": "Нальчик, ул. Ленина 1",
+    "date": "2025-05-12",
+    "contact": "Ахмат Ахматов +7-900-333-44-55",
+    "vins": ["WDC123456789", "WBA987654321"]
+  }]
+}

@@ -1,0 +1,23 @@
+fastapi
+uvicorn
+python-multipart   # FastAPI телеграм-файлы
+databases[postgresql]
+sqlalchemy
+psycopg2-binary    # драйвер к Postgres
+asyncpg            # драйвер к Postgres для async
+requests
+gspread
+google-auth
+python-telegram-bot==20.*
+
+
+
+fastapi==0.110.*
+uvicorn==0.29.*
+databases[asyncpg]==0.9.*
+SQLAlchemy==2.0.*
+python-telegram-bot==20.*
+gspread==6.*
+google-auth==2.*
+psycopg2-binary==2.*
+asyncpg==0.29.*
