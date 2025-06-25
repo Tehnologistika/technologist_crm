@@ -2,18 +2,35 @@ import importlib, sys, types
 
 class DummySheet:
     def __init__(self):
-        self.rows = []
+        # header row to mimic real sheet
+        self.rows = [[
+            'id', 'date', 'navigator', 'customer_company', 'route', 'cargo',
+            'orig_price', 'driver', 'carrier_company', 'carrier_price', 'status'
+        ]]
+
     def append_row(self, row):
         self.rows.append(list(row))
+
     def get_all_values(self):
         return [list(map(str, r)) for r in self.rows]
+
     def update_cell(self, row, col, value):
         while len(self.rows) < row:
             self.rows.append([""] * 11)
-        row_data = self.rows[row-1]
+        row_data = self.rows[row - 1]
         while len(row_data) < col:
             row_data.append("")
-        row_data[col-1] = value
+        row_data[col - 1] = value
+
+    def update(self, rng, values):
+        # range like "A2:K2"
+        row = int(rng.split(':')[0][1:])
+        while len(self.rows) < row:
+            self.rows.append([""] * 11)
+        row_values = values[0]
+        if len(row_values) < 11:
+            row_values = row_values + [""] * (11 - len(row_values))
+        self.rows[row - 1] = list(row_values[:11])
 
 
 def setup_sheets(monkeypatch):
@@ -49,14 +66,32 @@ def test_add_and_update(monkeypatch):
         'cargo': '3 cars',
         'orig_price': '100000'
     })
+    sheets.add_request_row({
+        'id': 8888,
+        'date': '2024-01-02',
+        'navigator': 'Nav2',
+        'customer_company': 'Cust2',
+        'route': 'B-C',
+        'cargo': '2 cars',
+        'orig_price': '200000'
+    })
+    # first row (sheet row 2) should match first request
+    assert fake.rows[1][:7] == [
+        9999, '2024-01-01', 'Nav', 'CustCo', 'A-B', '3 cars', '100000'
+    ]
+    # second row (sheet row 3) should contain second request
+    assert fake.rows[2][:7] == [
+        8888, '2024-01-02', 'Nav2', 'Cust2', 'B-C', '2 cars', '200000'
+    ]
+    # update first request and check
     sheets.update_request(9999, {
         'driver': 'Driver',
         'carrier_company': 'Carrier',
         'carrier_price': '90000',
         'status': 'Подтверждена'
     })
-    assert fake.rows == [[
+    assert fake.rows[1] == [
         9999, '2024-01-01', 'Nav', 'CustCo', 'A-B', '3 cars', '100000',
         'Driver', 'Carrier', '90000', 'Подтверждена'
-    ]]
+    ]
 

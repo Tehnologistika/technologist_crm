@@ -40,10 +40,14 @@ def add_request_row(data: dict) -> None:
         data.get('route', ''),
         data.get('cargo', ''),
         data.get('orig_price', ''),
-        '', '', '',
+        '',
+        '',
+        '',
         'Активна',
     ]
-    sheet.append_row(row)
+    # determine next empty row starting from column A
+    target = len(sheet.get_all_values()) + 1
+    sheet.update(f"A{target}:K{target}", [row])
 
 
 def update_request(request_id: int, updates: dict) -> None:
