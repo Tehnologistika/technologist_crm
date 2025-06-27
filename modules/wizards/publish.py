@@ -673,17 +673,14 @@ async def pub_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text_unloads = "Выгрузка:\n" + "\n".join(unload_lines) if unloads else ""
 
     # --- build route (first city to first city) and date range ---
-    def _city(addr: str) -> str:
-        """Возвращает только город (до первой запятой)."""
-        return addr.split(",")[0].strip()
-
-    route = ""
-    if loads and unloads:
-        route = f"{_city(loads[0].get('place', ''))} — {_city(unloads[0].get('place', ''))}"
-    elif loads:
-        route = _city(loads[0].get("place", ""))
-    elif unloads:
-        route = _city(unloads[0].get("place", ""))
+    first_load = loads[0]["place"].split(",")[0].strip() if loads else ""
+    first_unload = unloads[0]["place"].split(",")[0].strip() if unloads else ""
+    route = f"{first_load} — {first_unload}"
+    if not first_load or not first_unload:
+        await q.edit_message_text(
+            "⚠️ Не удалось определить маршрут. Проверьте адреса погрузки и выгрузки."
+        )
+        return ConversationHandler.END
 
     date_str = ""
     if loads and unloads:
@@ -778,13 +775,6 @@ async def pub_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # VIN-ов нет, но известно количество
         cars = [{"brand": brand, "model": model} for _ in range(qty)]
     # если ничего не смогли определить, оставляем пустой список
-    # --- validate route: must contain "—" ---
-    if "—" not in route or not route.split("—")[0].strip() or not route.split("—")[-1].strip():
-        await q.edit_message_text(
-            "❌ Ошибка: маршрут не определён. Проверьте адреса погрузки и выгрузки.",
-            parse_mode="Markdown"
-        )
-        return ConversationHandler.END
     # ------- Build human‑readable message BEFORE POST -------
     cars_descr = ""
     if o.get("car_count") and o.get("car_models"):
