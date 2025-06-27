@@ -520,7 +520,9 @@ def extract_route(text: str) -> tuple[str, str] | None:
     to_city   = m.group(2).strip().title()
     return from_city, to_city
 
-from sheets import add_request_row as add_record, sheet
+from sheets import add_request_row as add_record, sheet, safe_gspread_client
+
+gspread_client = safe_gspread_client()
 from database import database, agents, orders
 from database import companies as company
 
@@ -1066,7 +1068,8 @@ async def close_order(request: CloseOrderRequest):
 
     # добавляем строку‑лог в таблицу
     try:
-        sheet.append_row([
+        if sheet:
+            sheet.append_row([
             datetime.now().strftime('%Y-%m-%d %H:%M:%S'),   # Дата/время
             executor_info["agent_type"],                    # тип
             executor_info["name"],                          # имя
