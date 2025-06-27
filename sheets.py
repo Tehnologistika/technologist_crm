@@ -1,8 +1,19 @@
 import gspread
 from google.oauth2.service_account import Credentials
-import os
+import os, io, json
 
-CREDENTIALS_FILE = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "/home/a777/keys/prod-sa.json")
+key_path = os.getenv(
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    os.path.join(os.path.dirname(__file__), "keys", "prod-sa.json"),
+)
+if not os.path.isfile(key_path):
+    raise RuntimeError(
+        "Service account key not found. "
+        "Set GOOGLE_APPLICATION_CREDENTIALS or place prod-sa.json"
+    )
+
+with io.open(key_path, "r", encoding="utf-8") as f:
+    sa_config = json.load(f)
 SPREADSHEET_ID = '1oZaOlgU9gX4IwAPaa_Cl2eXVKbLeSvSPtt0oAG4nKO0'
 SHEET_NAME = 'Заявки'
 
@@ -11,7 +22,7 @@ SCOPES = [
     'https://www.googleapis.com/auth/drive'
 ]
 
-creds = Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=SCOPES)
+creds = Credentials.from_service_account_info(sa_config, scopes=SCOPES)
 client = gspread.authorize(creds)
 sheet = client.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME)
 

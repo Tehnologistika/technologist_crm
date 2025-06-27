@@ -10,8 +10,11 @@ from datetime import datetime
 from datetime import datetime, timedelta
 from sqlalchemy import func, select
 import json, os
-from dotenv import load_dotenv
-load_dotenv()  # подхватываем переменные из .env, включая SIGNED_GROUP_ID
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ModuleNotFoundError:
+    print("python-dotenv not installed — skipping .env loading")
 import secrets
 from pathlib import Path 
 BASE_DIR = Path(__file__).resolve().parent
