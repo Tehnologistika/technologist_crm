@@ -33,7 +33,7 @@ class DummySheet:
         self.rows[row - 1] = list(row_values[:11])
 
 
-def setup_sheets(monkeypatch):
+def setup_sheets(monkeypatch, tmp_path):
     fake_sheet = DummySheet()
     fake_client = types.SimpleNamespace(open_by_key=lambda key: types.SimpleNamespace(worksheet=lambda name: fake_sheet))
     fake_gspread = types.SimpleNamespace(authorize=lambda creds: fake_client)
@@ -47,6 +47,9 @@ def setup_sheets(monkeypatch):
     monkeypatch.setitem(sys.modules, 'gspread', fake_gspread)
     monkeypatch.setitem(sys.modules, 'google', google)
     monkeypatch.setitem(sys.modules, 'google.oauth2', oauth2)
+    dummy_key = tmp_path / 'dummy.json'
+    dummy_key.write_text('{}')
+    monkeypatch.setenv('GOOGLE_APPLICATION_CREDENTIALS', str(dummy_key))
     monkeypatch.setitem(sys.modules, 'google.oauth2.service_account', service_account)
     spec = importlib.util.spec_from_file_location('sheets', 'sheets.py')
     sheets = importlib.util.module_from_spec(spec)
@@ -55,8 +58,8 @@ def setup_sheets(monkeypatch):
     return sheets, fake_sheet
 
 
-def test_add_and_update(monkeypatch):
-    sheets, fake = setup_sheets(monkeypatch)
+def test_add_and_update(monkeypatch, tmp_path):
+    sheets, fake = setup_sheets(monkeypatch, tmp_path)
     sheets.add_request_row({
         'id': 9999,
         'date': '2024-01-01',
