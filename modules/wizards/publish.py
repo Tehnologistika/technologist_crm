@@ -542,13 +542,19 @@ async def pub_confirm_company(update: Update, ctx):
         n["cust_sign_name"] = n.get("cust_director", "")
         # если директор уже известен — сразу показываем превью (без лишнего вызова pub_dir)
         if n.get("cust_director"):
+            loads = n.get("loads", [])
+            unloads = n.get("unloads", [])
+            l_str = "; ".join(f"{x['place']} ({x['date']})" for x in loads)
+            u_str = "; ".join(f"{x['place']} ({x['date']})" for x in unloads)
+            cargo_prev = (n.get('cargo') or '').replace(',', '').strip() or '—'
             prev = (
                 f"🚚 *Превью*\n"
                 f"Компания‑заказчик: {n.get('cust_company_name','—')}\n"
-                f"{n.get('cargo','—')}\n"
+                f"{cargo_prev}\n"
                 f"{n.get('route','—')}\n"
                 f"VIN: {', '.join(n.get('vin_list', [])) or '—'}\n"
-                f"Погрузка: {n.get('addresses','—')}\n"
+                f"Погрузка: {l_str or '—'}\n"
+                f"Выгрузка: {u_str or '—'}\n"
                 f"Контакт погрузка: {n.get('contact_load','—')}\n"
                 f"Контакт выгрузка: {n.get('contact_unload','—')}\n"
                 f"Дата(ы): {n.get('date','—')}\n"
@@ -618,12 +624,16 @@ async def pub_dir(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "address": o.get("cust_address", "")
     })
     # дальше остальной код...
+    l_str = "; ".join(f"{x['place']} ({x['date']})" for x in o.get('loads', []))
+    u_str = "; ".join(f"{x['place']} ({x['date']})" for x in o.get('unloads', []))
+    cargo_prev = (o.get('cargo') or '').replace(',', '').strip()
     prev = (f"🚚 *Превью*\n"
             f"Компания-заказчик: {o.get('cust_company_name','—')}\n"
-            f"{o['cargo']}\n"
+            f"{cargo_prev or '—'}\n"
             f"{o.get('route', '—')}\n"
             f"VIN: {', '.join(o.get('vin_list', [])) or '—'}\n"
-            f"Погрузка: {o.get('addresses','—')}\n"
+            f"Погрузка: {l_str or '—'}\n"
+            f"Выгрузка: {u_str or '—'}\n"
             f"Контакт погрузка: {o.get('contact_load','—')}\n"
             f"Контакт выгрузка: {o.get('contact_unload','—')}\n"
             f"Дата(ы): {o.get('date','—')}\n"
@@ -675,12 +685,18 @@ async def pub_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- build route (first city to first city) and date range ---
     first_load = loads[0]["place"].split(",")[0].strip() if loads else ""
     first_unload = unloads[0]["place"].split(",")[0].strip() if unloads else ""
-    route = f"{first_load} — {first_unload}"
-    if not first_load or not first_unload or "—" not in route:
+    route = f"{' '.join(first_load.split())} — {' '.join(first_unload.split())}"
+    if (
+        not first_load
+        or not first_unload
+        or "—" not in route
+        or "," in route
+    ):
         await q.edit_message_text(
             "⚠️ Не удалось определить маршрут. Проверьте адреса погрузки и выгрузки."
         )
         return ConversationHandler.END
+    o["route"] = route
 
     date_str = ""
     if loads and unloads:
@@ -783,13 +799,12 @@ async def pub_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cargo_descr = o["cargo"].strip()
 
     price_text = o.get("budget", "").strip()
-    # Build "Маршрут • Груз — Цена"
-    msg_parts = [route]
+    # Build "Маршрут • Груз — Цена" with single spaces
+    human_message = route
     if cargo_descr:
-        msg_parts.append(f"• {cargo_descr}")
+        human_message += f" • {cargo_descr}"
     if price_text:
-        msg_parts.append(f"— {price_text}")
-    human_message = " ".join(msg_parts)
+        human_message += f" — {price_text}"
     # numeric price for driver lists / push
     final_amt = _clean_money(price_text)
 
@@ -799,6 +814,7 @@ async def pub_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "status": "active",            # <-- гарантируем стартовый статус
             "telegram_id": q.from_user.id,
             "message": human_message,
+            "route": route,
             "cargo": cargo_descr,
             "budget": price_text,
             "final_amt": final_amt,
