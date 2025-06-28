@@ -676,7 +676,7 @@ async def pub_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     first_load = loads[0]["place"].split(",")[0].strip() if loads else ""
     first_unload = unloads[0]["place"].split(",")[0].strip() if unloads else ""
     route = f"{first_load} — {first_unload}"
-    if not first_load or not first_unload:
+    if not first_load or not first_unload or "—" not in route:
         await q.edit_message_text(
             "⚠️ Не удалось определить маршрут. Проверьте адреса погрузки и выгрузки."
         )
@@ -708,9 +708,9 @@ async def pub_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if cargo_text:
         sections.append(f"🚚 Груз: {cargo_text}")
 
-    budget_text = o.get("budget", "")
-    if budget_text:
-        sections.append(f"💵 Цена: {budget_text}")
+    price_text = o.get("budget", "")
+    if price_text:
+        sections.append(f"💵 Цена: {price_text}")
 
     pay_terms_text = o.get("pay_terms", "")
     if pay_terms_text:
@@ -776,22 +776,22 @@ async def pub_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cars = [{"brand": brand, "model": model} for _ in range(qty)]
     # если ничего не смогли определить, оставляем пустой список
     # ------- Build human‑readable message BEFORE POST -------
-    cars_descr = ""
+    cargo_descr = ""
     if o.get("car_count") and o.get("car_models"):
-        cars_descr = f"{o['car_count']}×{o['car_models']}".strip()
+        cargo_descr = f"{o['car_count']}×{o['car_models']}".strip()
     elif o.get("cargo"):
-        cars_descr = o["cargo"].strip()
+        cargo_descr = o["cargo"].strip()
 
-    budget_text = o.get("budget", "").strip()
+    price_text = o.get("budget", "").strip()
     # Build "Маршрут • Груз — Цена"
     msg_parts = [route]
-    if cars_descr:
-        msg_parts.append(f"• {cars_descr}")
-    if budget_text:
-        msg_parts.append(f"— {budget_text}")
+    if cargo_descr:
+        msg_parts.append(f"• {cargo_descr}")
+    if price_text:
+        msg_parts.append(f"— {price_text}")
     human_message = " ".join(msg_parts)
     # numeric price for driver lists / push
-    final_amt = _clean_money(budget_text)
+    final_amt = _clean_money(price_text)
 
     r = requests.post(
         f"{SERVER_URL}/add_order",
@@ -799,8 +799,9 @@ async def pub_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "status": "active",            # <-- гарантируем стартовый статус
             "telegram_id": q.from_user.id,
             "message": human_message,
-            "cargo": cars_descr,
-            "final_amt":  final_amt,
+            "cargo": cargo_descr,
+            "budget": price_text,
+            "final_amt": final_amt,
             "cust_company_name": o.get("cust_company_name", ""),
             "cust_kpp":          o.get("cust_kpp", ""),
             "cust_address":      o.get("cust_address", ""),
@@ -847,8 +848,8 @@ async def pub_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "navigator": prof.get("name", ""),
                 "customer_company": o.get("cust_company_name", ""),
                 "route": route,
-                "cargo": cars_descr,
-                "orig_price": _clean_money(budget_text),
+                "cargo": cargo_descr,
+                "orig_price": _clean_money(price_text),
             })
         except Exception as e:
             print("Sheets add_request_row error:", e)
