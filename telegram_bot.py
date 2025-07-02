@@ -1744,6 +1744,7 @@ def main() -> None:
             ASK_TOKEN: [MessageHandler(filters.TEXT & ~filters.COMMAND, token_input)],
         },
         fallbacks=[],
+        per_message=True,
     )
 
     # handler for closing flow
@@ -1827,6 +1828,7 @@ def main() -> None:
             CommandHandler("cancel", cancel_wizard)
         ],
         per_user=True,
+        per_message=True,
     )
 
     pub_wizard = ConversationHandler(
@@ -1884,7 +1886,8 @@ def main() -> None:
             MessageHandler(filters.Regex(r"^/cancel$"), cancel_wizard),
             CommandHandler("cancel", cancel_wizard)
         ],
-        # per_message=False (default) — чтобы MessageHandler работал
+        per_message=True,
+        # per_message=True — track CallbackQueryHandler states
     )
 
     # --- Filter conversation handler ---
