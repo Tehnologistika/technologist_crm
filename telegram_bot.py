@@ -97,6 +97,9 @@ EXEC_BONUS_RATE   = 0.03   # 3 % от стоимости перевозки
 # Диапазон 400‑403 не пересекается с другими state‑id, объявленными ниже.
 NAME, PHONE, ROLE, ASK_TOKEN = range(400, 404)
 
+# --- Token conversation states ---
+TOK_MENU, TOK_DONE = range(100, 102)
+
 BACK_LABEL = "⬅️ Назад"
 
 # --- Filter label and buttons ---
@@ -1747,6 +1750,20 @@ def main() -> None:
         per_message=True,
     )
 
+    tok_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_token_menu, pattern=r"^admin_token_menu$")],
+        states={
+            TOK_MENU: [
+                CallbackQueryHandler(admin_token_generate_cb, pattern=r"^admin_token_(?:cust|exec)$")
+            ],
+            TOK_DONE: [
+                CallbackQueryHandler(admin_token_menu, pattern=r"^admin_token_menu$")
+            ],
+        },
+        fallbacks=[],
+        per_message=True,
+    )
+
     # handler for closing flow
     close_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(start_close_callback, pattern=r"^close_\d+$")],
@@ -1913,6 +1930,7 @@ def main() -> None:
         },
         fallbacks=[],
     )
+    app.add_handler(tok_conv)
     app.add_handler(filter_conv)
 
     # --- Top‑level text buttons ---
@@ -2051,11 +2069,49 @@ async def admin_token_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     kb = InlineKeyboardMarkup(
-        [[InlineKeyboardButton(TOKEN_CUST_LABEL, callback_data="admin_newtok_cust")],
-         [InlineKeyboardButton(TOKEN_EXEC_LABEL, callback_data="admin_newtok_exec")],
-         [InlineKeyboardButton("◀️ Назад", callback_data="admin_back_main")]]
+        [
+            [InlineKeyboardButton(TOKEN_CUST_LABEL, callback_data="admin_token_cust")],
+            [InlineKeyboardButton(TOKEN_EXEC_LABEL, callback_data="admin_token_exec")],
+            [InlineKeyboardButton("◀️ Назад", callback_data="admin_back_main")],
+        ]
     )
     await q.edit_message_text("Выберите тип токена:", reply_markup=kb)
+
+async def admin_token_generate_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Generate one-time invite token for selected role."""
+    query = update.callback_query
+    await query.answer()
+
+    role_code = query.data.split("_")[-1]
+    role = "заказчик" if role_code == "cust" else "исполнитель"
+
+    txt = "❌ Не удалось создать токен."
+    try:
+        resp = requests.post(
+            f"{SERVER_URL}/admin/invite",
+            json={"role": role},
+            timeout=4,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            token = data.get("token")
+            link = data.get("deep_link")
+            txt = (
+                f"<b>Токен для {_role_label(role)}</b>:\n"
+                f"<code>{token}</code>\n\n"
+                f"{link}"
+            )
+    except Exception as e:
+        print("admin_token_generate error:", e)
+
+    await query.edit_message_text(
+        txt,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("⬅️ Назад", callback_data="admin_token_menu")]]
+        ),
+    )
+    return TOK_DONE
 
 # --- Stub admin handlers (to be implemented) -------------------------------
 async def admin_choose_category(update, context):
