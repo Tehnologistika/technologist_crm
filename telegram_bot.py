@@ -47,6 +47,7 @@ import requests
 import aiohttp
 import asyncio
 import io
+import html  # for safe HTML escaping
 from modules.helpers import _http_get_json
 from modules.helpers import _clean_optional, _norm_inn, fmt_money, BACK_PATTERN
 from modules.wizards.publish import _clean_money
@@ -494,9 +495,10 @@ async def publish_form_intro(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # инициализируем контейнер для новой заявки
     context.user_data["new_order"] = {}
 
-    last = await update.message.reply_text(
-        "📝 *Шаг 1 / 11*\n"
-        "Сколько автомобилей вы планируете перевезти? (числом):",
+    last = await context.bot.send_message(
+        chat_id=update.effective_user.id,
+        text="📝 *Шаг 1 / 11*\n"
+             "Сколько автомобилей вы планируете перевезти? (числом):",
         parse_mode="Markdown",
         reply_markup=BACK_KB
     )
@@ -681,6 +683,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     • If profile exists – show menu
     • Else auto‑register using claimed role
     """
+    print("[DEBUG /start] entered, args =", context.args)
     tg_id = update.effective_user.id
     # --- welcome banner ---
     try:
@@ -702,6 +705,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             json={"telegram_id": tg_id, "token": token_arg},
             timeout=4
         )
+        print("[DEBUG /start] claim status", resp.status_code, resp.text)
         if resp.status_code != 200:
             await update.message.reply_text(
                 "🚫 Токен недействителен, просрочен или уже использован.\n"
@@ -727,7 +731,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             f"{role_intro.get(role_label, '')}\n\n"
             f"С этого момента начинается ваше восхождение на вершину самой красивой и высокой горы — {mountain}! ⛰️"
         )
-        await update.message.reply_text(msg, parse_mode="Markdown")
+        await update.message.reply_text(msg)
 
     # ---------- 2. Fetch profile ----------
     try:
@@ -744,6 +748,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             "agent_type": context.user_data["role"],
             "phone": ""
         }
+        print("[DEBUG /start] auto-register payload", reg_payload)
         try:
             requests.post(f"{SERVER_URL}/register_agent", json=reg_payload, timeout=4)
             profile = reg_payload
@@ -780,13 +785,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         f"{role_intro.get(role_label, '')}\n\n"
         f"С этого момента начинается ваше восхождение на вершину самой красивой и высокой горы — {mountain}! ⛰️"
     )
-    await update.message.reply_text(msg, parse_mode="Markdown")
-    # Удалить или закомментировать старое приветствие, связанное с ролью
-    # await update.message.reply_text(
-    #     WELCOME_ROLE_MSG.get(role,
-    #                          f"🎉 Добро пожаловать! Ваша роль: *{_role_label(role)}*"),
-    #     parse_mode="Markdown"
-    # )
+    await update.message.reply_text(msg)
+    print("[DEBUG /start] sending menu, role =", role)
     await send_main_menu(context.bot, tg_id, role)
     return ConversationHandler.END
 
@@ -1184,31 +1184,44 @@ async def task_details_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if car_count and car_models:
             sections.append(f"🚚 Груз: {car_count}×{car_models}")
 
-    # Ставки и бонусы
-    budget_text = detail.get("budget", "")
+    # --- Цены ---------------------------------------------------------
+    budget_text = (detail.get("budget") or "").strip()
+    original_amt = detail.get("original_amt") or 0   # customer price numeric
+    final_amt    = detail.get("final_amt")   or 0   # executor price numeric
+
+    # 1) Ставка заказчика
+    if not budget_text and original_amt:
+        budget_text = f"{original_amt:,} руб".replace(",", " ")
+
     if budget_text:
-        # Ставка для заказчика
         sections.append(f"💵 Ставка (заказчик): {budget_text}")
 
-        # Преобразуем текст, например "100 000 руб", в число 100000
+    # 2) Ставка исполнителя
+    if not final_amt and budget_text:
+        # вычислить из текста, если числового нет
         customer_amt = _clean_money(budget_text)
-        # Цена для исполнителя: минус 12%
-        exec_amt = int(customer_amt * 0.88)
-        # Бонус навигатора: 3%
-        nav_bonus = int(customer_amt * 0.03)
+        final_amt = int(customer_amt * 0.88)
 
-        # Выводим с разделением пробелами тысяч
-        sections.append(f"💵 Ставка (исполнитель): {exec_amt:,} руб".replace(",", " "))
-        sections.append(f"🏆 Бонус навигатора: +{nav_bonus:,} ₽".replace(",", " "))
+    if final_amt:
+        sections.append(f"💵 Ставка (исполнитель): {final_amt:,} руб".replace(",", " "))
 
     pay_terms_text = (detail.get("pay_terms") or "").strip()
-    vat_flag = detail.get("vat", True)
+    payment_type   = (detail.get("payment_type") or "").lower()
+    vat_flag       = detail.get("vat", True)
 
-    if pay_terms_text:
-        sections.append(f"💳 Условия оплаты: {pay_terms_text}")
+    # --- human‑friendly payment line ---
+    if payment_type == "cash":
+        pay_line = "💳 Условия оплаты: наличными"
+    elif payment_type == "noncash":
+        pay_line = "💳 Условия оплаты: безнал, " + ("с НДС" if vat_flag else "без НДС")
+    elif pay_terms_text:
+        # fallback to raw text if explicit
+        pay_line = f"💳 Условия оплаты: {pay_terms_text}"
     else:
-        # fallback: показываем, с НДС или без, если явных условий нет
-        sections.append("💳 Оплата с НДС" if vat_flag else "💳 Оплата без НДС")
+        # final fallback, legacy
+        pay_line = "💳 Оплата с НДС" if vat_flag else "💳 Оплата без НДС"
+
+    sections.append(pay_line)
 
     # Бонусы
     bonus_exec = detail.get("reward_exec") or 0
@@ -1743,7 +1756,7 @@ def main() -> None:
             ROLE:  [CallbackQueryHandler(choose_role, pattern=r"^role_")],
             ASK_TOKEN: [MessageHandler(filters.TEXT & ~filters.COMMAND, token_input)],
         },
-        fallbacks=[],
+        fallbacks=[]
     )
 
     # handler for closing flow
@@ -1827,10 +1840,14 @@ def main() -> None:
             CommandHandler("cancel", cancel_wizard)
         ],
         per_user=True,
+        per_message=True,
     )
 
     pub_wizard = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^✨ Заполнить анкету$"), publish_form_intro)],
+        entry_points=[MessageHandler(
+            filters.Regex(r"^✨\s*Заполнить\s+анкету"),
+            publish_form_intro
+        )],
         states={
             PUB_CAR_COUNT: [
                 MessageHandler(filters.Regex(BACK_PATTERN), back_to_publish_menu),
@@ -1884,7 +1901,6 @@ def main() -> None:
             MessageHandler(filters.Regex(r"^/cancel$"), cancel_wizard),
             CommandHandler("cancel", cancel_wizard)
         ],
-        # per_message=False (default) — чтобы MessageHandler работал
     )
 
     # --- Filter conversation handler ---
@@ -1971,10 +1987,66 @@ def main() -> None:
     # --- Admin category navigation ---
     app.add_handler(CallbackQueryHandler(admin_choose_category, pattern=r"^admin_cat_(?:current|archive)$"))
     app.add_handler(CallbackQueryHandler(show_admin_panel, pattern="^admin_back_main$"))
+    app.add_handler(CallbackQueryHandler(admin_token_menu, pattern=r"^admin_token_menu$"))
+    app.add_handler(CallbackQueryHandler(admin_token_generate_cb, pattern=r"^admin_token_(?:cust|exec)$"))
 
-    # --- Start the bot ---
-    print("🤖 Бот запущен и ждёт сообщений...")
     app.run_polling()
+# --- Admin generate invite token ------------------------------------
+async def admin_token_generate_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Generates a one‑time invite token for Navigator (customer) or Driver (executor).
+    Triggered by callback_data: admin_token_cust | admin_token_exec
+    """
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    # Backend expects role names in Russian: "заказчик" or "исполнитель"
+    if data.endswith("_cust"):
+        role = "заказчик"
+        role_lbl = "Навигатор"
+    else:
+        role = "исполнитель"
+        role_lbl = "Драйвер"
+
+    try:
+        r = requests.post(
+            f"{SERVER_URL}/admin/invite",
+            json={"role": role},
+            timeout=4
+        )
+        print("[DEBUG] invite status:", r.status_code, r.text)
+        if r.status_code != 200:
+            raise RuntimeError(f"status {r.status_code}")
+        token = r.json().get("token")
+        if not token:
+            raise RuntimeError("token not found in response")
+    except Exception as e:
+        await query.edit_message_text(f"❌ Не удалось создать токен: {e}")
+        return
+    token_html = html.escape(str(token)) if token else ""
+    # deep‑link for one‑tap registration
+    bot_username = context.bot.username
+        # deep-link для мгновенной регистрации
+    deep_link = f"https://t.me/{context.bot.username}?start={token}"
+
+    txt = (
+        f"🔑 Токен для {role_lbl}:\n"
+        f"{token}\n\n"
+        "💡 Перешлите ссылку — она запустит бота сразу с токеном:\n"
+        f"{deep_link}"
+    )
+
+    # одна кнопка «Назад» – администратору регистрация не нужна
+    kb = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("⬅️ Назад", callback_data="admin_token_menu")]]
+    )
+
+    await query.edit_message_text(
+        txt,
+        reply_markup=kb,
+        disable_web_page_preview=True
+    )
 
 
 # --- Admin token menu handlers ---
@@ -2047,11 +2119,15 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def admin_token_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
+
     kb = InlineKeyboardMarkup(
-        [[InlineKeyboardButton(TOKEN_CUST_LABEL, callback_data="admin_newtok_cust")],
-         [InlineKeyboardButton(TOKEN_EXEC_LABEL, callback_data="admin_newtok_exec")],
-         [InlineKeyboardButton("◀️ Назад", callback_data="admin_back_main")]]
+        [
+            [InlineKeyboardButton(TOKEN_CUST_LABEL,  callback_data="admin_token_cust")],
+            [InlineKeyboardButton(TOKEN_EXEC_LABEL,  callback_data="admin_token_exec")],
+            [InlineKeyboardButton("◀️ Назад",        callback_data="admin_back_main")],
+        ]
     )
+
     await q.edit_message_text("Выберите тип токена:", reply_markup=kb)
 
 # --- Stub admin handlers (to be implemented) -------------------------------
@@ -2262,6 +2338,6 @@ async def admin_order_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as ex:
             print("admin_order_card send error:", ex)
 
-# ---------- entrypoint ----------
 if __name__ == "__main__":
+    print("🤖 Бот запущен и ждёт сообщений...")
     main()

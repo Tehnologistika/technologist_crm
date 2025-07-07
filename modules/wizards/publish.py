@@ -35,6 +35,33 @@ def _clean_money(val) -> int:
     digits = "".join(ch for ch in str(val) if ch.isdigit())
     return int(digits) if digits else 0
 
+# --------------------------------------------------------------------------
+# Helper: extract city name from full address
+_city_bad_words = {"ул", "улица", "д", "дом", "house", "street"}
+
+def _city_from(addr: str) -> str:
+    """
+    Try to extract city component from free‑form address.
+    • Takes substring before first comma / em‑dash / hyphen
+    • Drops common words like «ул.», «д.»
+    • Returns first non‑empty word ≥ 2 chars
+    """
+    if not addr:
+        return ""
+    # split on first comma / long dash / hyphen
+    import re as _re
+    cut = _re.split(r"[,—\-]", addr, maxsplit=1)[0].strip()
+    # remove bad prefixes
+    for bad in _city_bad_words:
+        if cut.lower().startswith(bad):
+            cut = cut[len(bad):].strip()
+    # first word that looks like a name
+    parts = cut.split()
+    for p in parts:
+        if len(p) >= 2 and p.lower() not in _city_bad_words:
+            return p.strip()
+    return ""
+
 # Backend URL configuration
 try:
     from modules.settings import SERVER_URL
@@ -64,6 +91,9 @@ async def _safe_send_main_menu(bot, chat_id: int, role: str | None = None):
 
 # --- Entry point: publish form intro ---
 async def publish_form_intro(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # 👉 сброс предыдущих данных, чтобы не тянуть старые loads/unloads
+    context.user_data["new_order"] = {}
+
     await update.message.reply_text(
         "📝 *Шаг 1 / 11*\n"
         "Сколько автомобилей вы планируете перевезти? (числом):",
@@ -304,8 +334,16 @@ async def pub_pay_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Saves entered payment terms and moves to INN step.
     """
-    # Save entered payment terms
-    context.user_data["new_order"]["pay_terms"] = update.message.text.strip()
+    text_raw = update.message.text.strip()
+    context.user_data["new_order"]["pay_terms"] = text_raw
+
+    # determine payment_type from text
+    if "налич" in text_raw.lower():
+        context.user_data["new_order"]["payment_type"] = "cash"
+    else:
+        # if not already set by buttons, default to noncash
+        context.user_data["new_order"].setdefault("payment_type", "noncash")
+
     # Ask for INN
     await update.message.reply_text(
         "📝 *Шаг 9 / 11*\n"
@@ -319,31 +357,36 @@ async def pub_pay_terms(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def pub_pay_choice(update: Update, ctx):
     """
     Callback handler for inline buttons «С НДС» / «Без НДС».
-    Saves vat flag and moves wizard to step pay terms.
+    Saves only VAT flag *and* sets default `payment_type="noncash"`.
+    Real text of payment terms пользователь введёт на следующем шаге.
     """
     q = update.callback_query
     await q.answer()
 
-    # True = с НДС, False = без НДС
-    vat_flag = q.data == "pay_vat"
-    ctx.user_data["new_order"]["vat"] = vat_flag
+    choice = q.data  # "pay_vat" or "pay_novat"
+    o = ctx.user_data.setdefault("new_order", {})
 
-    # 1) убираем inline-кнопки
+    # --- set VAT flag ---
+    if choice == "pay_vat":
+        o["vat"] = True
+    elif choice == "pay_novat":
+        o["vat"] = False
+    else:
+        o["vat"] = True   # fallback: treat as "с НДС"
+
+    # Всегда считаем, что кнопка = безналичный расчет,
+    # реальное уточнение (нал/безнал) будет в следующем шаге.
+    o["payment_type"] = "noncash"
+
+    # prompt next step (user enters free‑form payment terms)
     await q.edit_message_text("Форма оплаты принята.")
 
-    # 2) спрашиваем условия оплаты с учетом выбора С НДС / Без НДС
-    if vat_flag:
-        prompt_text = (
-            "📝 *Шаг 8 / 11*\n"
-            "Вы выбрали: *С НДС*.\n"
-            "Введите условия оплаты (например: *100% безнал с НДС, 3 банковских дня*):"
-        )
-    else:
-        prompt_text = (
-            "📝 *Шаг 8 / 11*\n"
-            "Вы выбрали: *Без НДС*.\n"
-            "Введите условия оплаты (например: *100% безнал без НДС, 3 банковских дня*):"
-        )
+    vat_label = "С НДС" if o["vat"] else "Без НДС"
+    prompt_text = (
+        "📝 *Шаг 8 / 11*\n"
+        f"Вы выбрали: *{vat_label}*.\n"
+        "Введите условия оплаты (пример: *100% безнал, 3 банковских дня*):"
+    )
     await ctx.bot.send_message(
         chat_id=q.from_user.id,
         text=prompt_text,
@@ -658,6 +701,14 @@ async def pub_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     vin_list = o.get("vin_list", [])
     loads   = o.get("loads", [])
     unloads = o.get("unloads", [])
+    # --- ensure both loads and unloads are present ---
+    if not loads or not unloads:
+        await q.edit_message_text(
+            "❗️ Необходимо указать минимум одну точку погрузки И одну точку выгрузки.\n"
+            "Исправьте адреса и попробуйте опубликовать снова.",
+            parse_mode="Markdown"
+        )
+        return ConversationHandler.END
 
     # --- build multi-point loads and unloads summary ---
     load_lines = [
@@ -672,18 +723,11 @@ async def pub_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     text_unloads = "Выгрузка:\n" + "\n".join(unload_lines) if unloads else ""
 
-    # --- build route (first city to first city) and date range ---
-    def _city(addr: str) -> str:
-        """Возвращает только город (до первой запятой)."""
-        return addr.split(",")[0].strip()
+    # --- build route using robust _city_from helper ---
+    origin = _city_from(loads[0].get("place", "")) if loads else ""
+    dest   = _city_from(unloads[0].get("place", "")) if unloads else ""
 
-    route = ""
-    if loads and unloads:
-        route = f"{_city(loads[0].get('place', ''))} — {_city(unloads[0].get('place', ''))}"
-    elif loads:
-        route = _city(loads[0].get("place", ""))
-    elif unloads:
-        route = _city(unloads[0].get("place", ""))
+    route = f"{origin} — {dest}" if origin and dest else origin or dest
 
     date_str = ""
     if loads and unloads:
@@ -778,10 +822,10 @@ async def pub_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # VIN-ов нет, но известно количество
         cars = [{"brand": brand, "model": model} for _ in range(qty)]
     # если ничего не смогли определить, оставляем пустой список
-    # --- validate route: must contain "—" ---
-    if "—" not in route or not route.split("—")[0].strip() or not route.split("—")[-1].strip():
+    # --- validate route: must have both origin and dest ---
+    if not origin or not dest:
         await q.edit_message_text(
-            "❌ Ошибка: маршрут не определён. Проверьте адреса погрузки и выгрузки.",
+            "❗️ Маршрут не распознан. Проверьте города погрузки и выгрузки.",
             parse_mode="Markdown"
         )
         return ConversationHandler.END
@@ -791,15 +835,17 @@ async def pub_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cars_descr = f"{o['car_count']}×{o['car_models']}".strip()
     elif o.get("cargo"):
         cars_descr = o["cargo"].strip()
+    # remove commas so backend doesn't split route on them
+    cars_descr = cars_descr.replace(",", " ")
 
-    budget_text = o.get("budget", "").strip()
+    budget_text = re.sub(",", " ", o.get("budget", "")).strip()
     # Build "Маршрут • Груз — Цена"
     msg_parts = [route]
     if cars_descr:
         msg_parts.append(f"• {cars_descr}")
     if budget_text:
         msg_parts.append(f"— {budget_text}")
-    human_message = " ".join(msg_parts)
+    human_message = " ".join(msg_parts).strip()
     # numeric price for driver lists / push
     final_amt = _clean_money(budget_text)
 
@@ -821,8 +867,8 @@ async def pub_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "cust_director":     o.get("cust_director", ""),
             "cust_sign_name":    o.get("cust_director", ""),
             "cust_name":         o.get("cust_company_name", ""),   # ← добавили alias
-            "pay_terms":         o.get("pay_terms", ""),
-            "vat": o.get("vat", True),
+            "vat":        o.get("vat", True),
+            "pay_terms":  o.get("pay_terms", ""),
             "cars":     cars,
             "loads":    loads,
             "unloads":  unloads,
@@ -889,7 +935,17 @@ async def pub_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📲 Как только водитель подтвердит перевозку, вы получите уведомление."
         )
         await context.bot.send_message(chat_id=q.from_user.id, text=msg)
+        # очистим данные визарда, чтобы новая заявка начиналась «с нуля»
+        context.user_data["new_order"] = {}
         await _safe_send_main_menu(context.bot, q.from_user.id, role)
+        return ConversationHandler.END
+    elif r.status_code == 400 and "Укажите маршрут" in r.text:
+        # backend вернул ошибку формата маршрута
+        await q.edit_message_text(
+            "❗️ Маршрут не распознан. Проверьте адреса погрузки и выгрузки.\n"
+            "Вернитесь к шагу адресов и укажите города в формате «ГородA — ГородB».",
+            parse_mode="Markdown"
+        )
         return ConversationHandler.END
     else:
         await q.edit_message_text(f"❌ Ошибка: {r.text}")

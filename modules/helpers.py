@@ -104,6 +104,32 @@ def _clean_human_field(value: str | None) -> str:
     return clean.strip()
 
 # ----------------------------------------------------------------------
+# Helper: extract city name from free‑form address
+# ----------------------------------------------------------------------
+_city_bad_words = {"ул", "улица", "д", "дом", "house", "street"}
+
+def _city_from(addr: str) -> str:
+    """
+    Пытается выделить название города из произвольной строки адреса.
+    • Берёт подстроку до первой запятой / длинного тире / дефиса
+    • Отбрасывает служебные слова («ул.», «д.» ...)
+    • Возвращает первое «похожее» слово длиной ≥ 2 символа
+    """
+    if not isinstance(addr, str):
+        return ""
+    # split by first comma, em‑dash or hyphen
+    cut = _re.split(r"[,—\-]", addr, maxsplit=1)[0].strip()
+    # remove bad prefixes
+    for bad in _city_bad_words:
+        if cut.lower().startswith(bad):
+            cut = cut[len(bad):].strip()
+    # first adequate token
+    for tok in cut.split():
+        if len(tok) >= 2 and tok.lower() not in _city_bad_words:
+            return tok.strip()
+    return ""
+
+# ----------------------------------------------------------------------
 # Normalizers for INN / KPP used in wizards
 # ----------------------------------------------------------------------
 def _norm_inn(value: str | None) -> str:
@@ -204,5 +230,6 @@ try:
     __all__.append("_get_company")
     __all__.append("_save_company")
     __all__.append("UPLOAD_CONTRACT_PATTERN")
+    __all__.append("_city_from")
 except Exception:
     pass
