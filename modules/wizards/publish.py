@@ -182,7 +182,18 @@ async def pub_vins(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- LOAD steps ---
 async def pub_load_addr(update, ctx):
     _init_order_lists(ctx)
-    ctx.user_data.setdefault("cur_load", {})["place"] = update.message.text.strip()
+    raw_addr = update.message.text.strip()
+
+    # accept even plain city names like "Михнево"
+    import re as _re
+    if len(_re.findall(r"[A-Za-zА-Яа-яЁё]{2,}", raw_addr)) == 0:
+        await update.message.reply_text(
+            "❗️ Адрес слишком короткий. Укажите хотя бы населённый пункт.",
+            reply_markup=BACK_KB
+        )
+        return PUB_L_ADDR  # stay on the same step
+
+    ctx.user_data.setdefault("cur_load", {})["place"] = raw_addr
     await update.message.reply_text("Дата погрузки (ДД.ММ.ГГГГ):",
                                     reply_markup=BACK_KB)
     return PUB_L_DATE
@@ -237,7 +248,17 @@ async def pub_load_more(update, ctx):
 
 async def pub_unload_addr(update, ctx):
     _init_order_lists(ctx)
-    ctx.user_data.setdefault("cur_unload", {})["place"] = update.message.text.strip()
+    raw_addr = update.message.text.strip()
+
+    import re as _re
+    if len(_re.findall(r"[A-Za-zА-Яа-яЁё]{2,}", raw_addr)) == 0:
+        await update.message.reply_text(
+            "❗️ Адрес слишком короткий. Укажите хотя бы населённый пункт.",
+            reply_markup=BACK_KB
+        )
+        return PUB_U_ADDR
+
+    ctx.user_data.setdefault("cur_unload", {})["place"] = raw_addr
     await update.message.reply_text("Дата выгрузки (ДД.ММ.ГГГГ):",
                                     reply_markup=BACK_KB)
     return PUB_U_DATE
