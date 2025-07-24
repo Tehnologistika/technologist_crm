@@ -1840,7 +1840,7 @@ def main() -> None:
             CommandHandler("cancel", cancel_wizard)
         ],
         per_user=True,
-        per_message=True,
+        # per_message=True,  # Removed to allow MessageHandler steps to receive driver replies
     )
 
     pub_wizard = ConversationHandler(
@@ -1901,6 +1901,8 @@ def main() -> None:
             MessageHandler(filters.Regex(r"^/cancel$"), cancel_wizard),
             CommandHandler("cancel", cancel_wizard)
         ],
+        per_user=True,
+        allow_reentry=True,
     )
 
     # --- Filter conversation handler ---
@@ -1947,7 +1949,13 @@ def main() -> None:
         entry_points=[MessageHandler(filters.TEXT & filters.Regex(f"^{BONUS_CALC_LABEL}$"), bonus_calc_start)],
         states={
             BONUS_INPUT:[
+                MessageHandler(filters.Regex(f"^{BACK_LABEL}$"), back_to_main),
                 MessageHandler(filters.Regex(BACK_PATTERN), back_to_main),
+                # Any main‑menu button pressed while inside calculator → exit to menu
+                MessageHandler(
+                    filters.Regex(rf"^(?:{MENU_LABEL}|{PUBLISH_LABEL}|✨\s*Заполнить\s+анкету|{TASKS_TEXT}|{HISTORY_LABEL}|{ADMIN_PANEL_LABEL})$"),
+                    back_to_main
+                ),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, bonus_calc_compute)
             ]
         },
